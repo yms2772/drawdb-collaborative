@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import {
   CLIENT_ID_PATTERN,
   DIAGRAM_ID_PATTERN,
+  isValidEntityId,
   isPlainObject,
   isValidOperationPreview,
   isValidParticipant,
@@ -217,7 +218,7 @@ export function attachCollaborationServer(server, store) {
 
       if (message.type === MESSAGE_TYPES.TABLE_LOCK_ACQUIRE) {
         if (
-          !CLIENT_ID_PATTERN.test(message.tableId || "") ||
+          !isValidEntityId(message.tableId) ||
           !CLIENT_ID_PATTERN.test(message.requestId || "")
         ) {
           send(socket, {
@@ -245,7 +246,7 @@ export function attachCollaborationServer(server, store) {
 
       if (message.type === MESSAGE_TYPES.TABLE_LOCK_RENEW) {
         if (
-          CLIENT_ID_PATTERN.test(message.tableId || "") &&
+          isValidEntityId(message.tableId) &&
           Number.isInteger(message.token) &&
           tableLocks.renew(
             diagramId,
@@ -261,7 +262,7 @@ export function attachCollaborationServer(server, store) {
 
       if (message.type === MESSAGE_TYPES.TABLE_LOCK_RELEASE) {
         if (
-          CLIENT_ID_PATTERN.test(message.tableId || "") &&
+          isValidEntityId(message.tableId) &&
           Number.isInteger(message.token) &&
           tableLocks.release(
             diagramId,

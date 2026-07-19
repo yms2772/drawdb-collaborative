@@ -3,6 +3,13 @@ export { MESSAGE_TYPES } from "../src/collaboration/protocol.js";
 export const DIAGRAM_ID_PATTERN = /^[a-zA-Z0-9_-]{1,128}$/;
 export const CLIENT_ID_PATTERN = /^[a-zA-Z0-9_-]{1,128}$/;
 
+export function isValidEntityId(value) {
+  return (
+    (typeof value === "string" && CLIENT_ID_PATTERN.test(value)) ||
+    (Number.isSafeInteger(value) && value >= 0)
+  );
+}
+
 export function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -25,7 +32,7 @@ export function isValidOperationPreview(operation) {
   const { payload } = operation;
   return (
     isPlainObject(payload) &&
-    CLIENT_ID_PATTERN.test(payload.id || "") &&
+    isValidEntityId(payload.id) &&
     Number.isFinite(payload.x) &&
     Number.isFinite(payload.y)
   );

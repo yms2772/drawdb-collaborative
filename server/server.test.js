@@ -78,6 +78,13 @@ test("validates ephemeral table movement previews", () => {
   assert.equal(
     isValidOperationPreview({
       type: "table.move",
+      payload: { id: 0, x: 10, y: 20 },
+    }),
+    true,
+  );
+  assert.equal(
+    isValidOperationPreview({
+      type: "table.move",
       payload: { id: "table-1", x: 120.5, y: -40 },
     }),
     true,
@@ -138,7 +145,7 @@ test("WebSocket table locks reject concurrent edits", async (t) => {
   application.store.create({
     id: "diagram-lock-test",
     name: "Lock test",
-    document: { tables: [{ id: "table-1", x: 0, y: 0 }] },
+    document: { tables: [{ id: 0, x: 0, y: 0 }] },
   });
   await new Promise((resolve) =>
     application.server.listen(0, "127.0.0.1", resolve),
@@ -186,7 +193,7 @@ test("WebSocket table locks reject concurrent edits", async (t) => {
     JSON.stringify({
       type: "table_lock_acquire",
       diagramId: "diagram-lock-test",
-      tableId: "table-1",
+      tableId: 0,
       requestId: "request-a",
     }),
   );
@@ -200,7 +207,7 @@ test("WebSocket table locks reject concurrent edits", async (t) => {
     JSON.stringify({
       type: "table_lock_acquire",
       diagramId: "diagram-lock-test",
-      tableId: "table-1",
+      tableId: 0,
       requestId: "request-b",
     }),
   );
@@ -218,7 +225,7 @@ test("WebSocket table locks reject concurrent edits", async (t) => {
       diagramId: "diagram-lock-test",
       operation: {
         type: "table.move",
-        payload: { id: "table-1", x: 10, y: 20 },
+        payload: { id: 0, x: 10, y: 20 },
       },
     }),
   );
@@ -228,7 +235,7 @@ test("WebSocket table locks reject concurrent edits", async (t) => {
     JSON.stringify({
       type: "table_lock_release",
       diagramId: "diagram-lock-test",
-      tableId: "table-1",
+      tableId: 0,
       token: lockA.token,
     }),
   );
@@ -241,7 +248,7 @@ test("WebSocket table locks reject concurrent edits", async (t) => {
     JSON.stringify({
       type: "table_lock_acquire",
       diagramId: "diagram-lock-test",
-      tableId: "table-1",
+      tableId: 0,
       requestId: "request-b-after-release",
     }),
   );
