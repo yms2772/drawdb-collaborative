@@ -37,10 +37,19 @@ export function isValidOperationPreview(operation) {
   if (!isPlainObject(operation) || operation.type !== "table.move")
     return false;
   const { payload } = operation;
+  if (
+    !isPlainObject(payload) ||
+    !isValidEntityId(payload.id) ||
+    !Number.isFinite(payload.x) ||
+    !Number.isFinite(payload.y)
+  ) {
+    return false;
+  }
+  // tableId is what the lock check reads, so it must be validated too and must
+  // name the same table the payload moves.
+  if (payload.tableId === undefined) return true;
   return (
-    isPlainObject(payload) &&
-    isValidEntityId(payload.id) &&
-    Number.isFinite(payload.x) &&
-    Number.isFinite(payload.y)
+    isValidEntityId(payload.tableId) &&
+    toEntityKey(payload.tableId) === toEntityKey(payload.id)
   );
 }

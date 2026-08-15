@@ -256,10 +256,12 @@ export function attachCollaborationServer(server, store) {
           });
           return;
         }
+        // isValidOperationPreview guarantees tableId, when present, names the
+        // same table as id, so the lock is checked against what actually moves.
         if (
           !tableLocks.owns(
             diagramId,
-            message.operation.payload.tableId ?? message.operation.payload.id,
+            message.operation.payload.id,
             socket.participant.clientId,
           )
         ) {
