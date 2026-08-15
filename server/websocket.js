@@ -78,8 +78,11 @@ export function attachCollaborationServer(server, store) {
     socket.on("pong", () => {
       socket.isAlive = true;
     });
+    socket.on("error", (error) => {
+      console.error("Socket error:", error.message);
+    });
 
-    socket.on("message", (raw) => {
+    const handleClientMessage = (raw) => {
       let message;
       try {
         message = JSON.parse(raw.toString());
@@ -106,8 +109,17 @@ export function attachCollaborationServer(server, store) {
           });
           return;
         }
-        socket.participant = message.participant;
         const diagram = store.get(diagramId);
+        if (!diagram) {
+          // The diagram can be deleted between the upgrade and the join.
+          send(socket, {
+            type: MESSAGE_TYPES.ERROR,
+            message: "Diagram not found",
+          });
+          socket.close();
+          return;
+        }
+        socket.participant = message.participant;
         send(socket, {
           type: MESSAGE_TYPES.JOINED,
           diagramId,
@@ -141,7 +153,12 @@ export function attachCollaborationServer(server, store) {
           Number.isInteger(message.baseVersion) &&
           isPlainObject(message.operation) &&
           message.operation.type === "snapshot.replace" &&
-          isPlainObject(message.operation.payload?.document);
+          isPlainObject(message.operation.payload?.document) &&
+          // An unvalidated name reaches better-sqlite3, which throws on any
+          // type it cannot bind.
+          (message.operation.payload.name === undefined ||
+            (typeof message.operation.payload.name === "string" &&
+              message.operation.payload.name.length <= 200));
         if (!valid) {
           send(socket, {
             type: MESSAGE_TYPES.ERROR,
@@ -156,6 +173,14 @@ export function attachCollaborationServer(server, store) {
           baseVersion: message.baseVersion,
           operationId: message.operationId,
         });
+        if (result.status === "not_found") {
+          // Deleted underneath us; result carries no diagram to read.
+          send(socket, {
+            type: MESSAGE_TYPES.ERROR,
+            message: "Diagram not found",
+          });
+          return;
+        }
         if (result.status === "conflict") {
           send(socket, {
             type: MESSAGE_TYPES.RESYNC_REQUIRED,
@@ -302,6 +327,20 @@ export function attachCollaborationServer(server, store) {
         type: MESSAGE_TYPES.ERROR,
         message: "Unsupported message type",
       });
+    };
+
+    socket.on("message", (raw) => {
+      // Anything thrown here would otherwise be an uncaught exception that
+      // kills the process for every room, not just this connection.
+      try {
+        handleClientMessage(raw);
+      } catch (error) {
+        console.error("Message handling failed:", error);
+        send(socket, {
+          type: MESSAGE_TYPES.ERROR,
+          message: "Message could not be processed",
+        });
+      }
     });
 
     socket.on("close", () => {

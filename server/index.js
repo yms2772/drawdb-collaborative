@@ -111,9 +111,20 @@ export function createApplication({ databasePath, staticPath } = {}) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  // The API and WebSocket are unauthenticated, so a stray listener is a
+  // full read/write/delete surface. Keep the process alive on unexpected
+  // errors rather than letting one bad frame take every room down.
+  process.on("uncaughtException", (error) => {
+    console.error("Uncaught exception:", error);
+  });
+  process.on("unhandledRejection", (reason) => {
+    console.error("Unhandled rejection:", reason);
+  });
+
   const port = Number.parseInt(process.env.PORT || "3000", 10);
+  const host = process.env.BIND_HOST || "127.0.0.1";
   const { server } = createApplication();
-  server.listen(port, "0.0.0.0", () => {
-    console.log(`drawDB listening on http://0.0.0.0:${port}`);
+  server.listen(port, host, () => {
+    console.log(`drawDB listening on http://${host}:${port}`);
   });
 }
