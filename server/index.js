@@ -45,6 +45,13 @@ export function createApplication({ databasePath, staticPath } = {}) {
         return;
       }
       const requestedId = req.body.id;
+      if (requestedId !== undefined && typeof requestedId !== "string") {
+        // A null id used to slip past `??` and then be written straight to a
+        // TEXT PRIMARY KEY, which SQLite accepts, producing unreachable rows
+        // that the duplicate check could never match.
+        res.status(400).json({ error: "Invalid diagram ID" });
+        return;
+      }
       const id = requestedId ?? crypto.randomUUID();
       if (!DIAGRAM_ID_PATTERN.test(id)) {
         res.status(400).json({ error: "Invalid diagram ID" });
@@ -54,7 +61,11 @@ export function createApplication({ databasePath, staticPath } = {}) {
         res.status(409).json({ error: "Diagram already exists" });
         return;
       }
-      res.status(201).json(store.create({ id, ...req.body }));
+      // Fields are named explicitly: spreading the body would let a client
+      // override the validated id.
+      res.status(201).json(
+        store.create({ id, name: req.body.name, document: req.body.document }),
+      );
     } catch (error) {
       next(error);
     }
@@ -65,7 +76,12 @@ export function createApplication({ databasePath, staticPath } = {}) {
     else res.json(diagram);
   });
   app.put("/api/diagrams/:id", validId, (req, res) => {
-    if (!validPayload(req.body) || !Number.isInteger(req.body.baseVersion)) {
+    if (
+      !validPayload(req.body) ||
+      !Number.isInteger(req.body.baseVersion) ||
+      (req.body.operationId !== undefined &&
+        typeof req.body.operationId !== "string")
+    ) {
       res
         .status(400)
         .json({
@@ -73,7 +89,13 @@ export function createApplication({ databasePath, staticPath } = {}) {
         });
       return;
     }
-    const result = store.updateSnapshot({ id: req.params.id, ...req.body });
+    const result = store.updateSnapshot({
+      id: req.params.id,
+      name: req.body.name,
+      document: req.body.document,
+      baseVersion: req.body.baseVersion,
+      operationId: req.body.operationId,
+    });
     if (result.status === "not_found")
       res.status(404).json({ error: "Diagram not found" });
     else if (result.status === "conflict") {
