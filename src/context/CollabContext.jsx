@@ -11,6 +11,11 @@ import { CONNECTION_STATE, MESSAGE_TYPES } from "../collaboration/protocol";
 
 const COLORS = ["#2563eb", "#dc2626", "#16a34a", "#9333ea", "#ea580c"];
 
+// Table IDs are numbers on imported diagrams and strings on new ones. The lock
+// bookkeeping below uses Maps, where 1 and "1" are different keys, so every ID
+// is normalized on the way in.
+const lockKey = (tableId) => String(tableId);
+
 function getIdentity() {
   const stored = sessionStorage.getItem("drawdb-collaboration-identity");
   if (stored) {
@@ -330,8 +335,9 @@ export default function CollabContextProvider({ children }) {
   }, []);
 
   const acquireTableLock = useCallback((tableId) => {
-    if (heldLocksRef.current.has(tableId)) return Promise.resolve(true);
-    const existingRequest = pendingLocksByTableRef.current.get(tableId);
+    const key = lockKey(tableId);
+    if (heldLocksRef.current.has(key)) return Promise.resolve(true);
+    const existingRequest = pendingLocksByTableRef.current.get(key);
     if (existingRequest) return existingRequest;
 
     const socket = socketRef.current;
@@ -341,7 +347,7 @@ export default function CollabContextProvider({ children }) {
     }
     const requestId = nanoid();
     const request = new Promise((resolve) => {
-      pendingLocksRef.current.set(requestId, { tableId, resolve });
+      pendingLocksRef.current.set(requestId, { tableId: key, resolve });
       socket.send(
         JSON.stringify({
           type: MESSAGE_TYPES.TABLE_LOCK_ACQUIRE,
@@ -354,11 +360,11 @@ export default function CollabContextProvider({ children }) {
         const pending = pendingLocksRef.current.get(requestId);
         if (!pending) return;
         pendingLocksRef.current.delete(requestId);
-        pendingLocksByTableRef.current.delete(tableId);
+        pendingLocksByTableRef.current.delete(key);
         pending.resolve(false);
       }, 5_000);
     });
-    pendingLocksByTableRef.current.set(tableId, request);
+    pendingLocksByTableRef.current.set(key, request);
     return request;
   }, []);
 
@@ -367,7 +373,7 @@ export default function CollabContextProvider({ children }) {
       const acquired = [];
       for (const tableId of [...new Set(tableIds)]) {
         if (await acquireTableLock(tableId)) {
-          acquired.push(tableId);
+          acquired.push(lockKey(tableId));
           continue;
         }
         const socket = socketRef.current;
@@ -397,8 +403,9 @@ export default function CollabContextProvider({ children }) {
     const session = sessionRef.current;
     if (!session || socket?.readyState !== WebSocket.OPEN) return;
     for (const tableId of [...new Set(tableIds)]) {
-      if ((retainedLocksRef.current.get(tableId) ?? 0) > 0) continue;
-      const lock = heldLocksRef.current.get(tableId);
+      const key = lockKey(tableId);
+      if ((retainedLocksRef.current.get(key) ?? 0) > 0) continue;
+      const lock = heldLocksRef.current.get(key);
       if (!lock) continue;
       socket.send(
         JSON.stringify({
@@ -408,21 +415,23 @@ export default function CollabContextProvider({ children }) {
           token: lock.token,
         }),
       );
-      heldLocksRef.current.delete(tableId);
+      heldLocksRef.current.delete(key);
     }
   }, []);
 
   const retainTableLock = useCallback((tableId) => {
+    const key = lockKey(tableId);
     retainedLocksRef.current.set(
-      tableId,
-      (retainedLocksRef.current.get(tableId) ?? 0) + 1,
+      key,
+      (retainedLocksRef.current.get(key) ?? 0) + 1,
     );
   }, []);
 
   const releaseTableLockRetention = useCallback((tableId) => {
-    const count = retainedLocksRef.current.get(tableId) ?? 0;
-    if (count <= 1) retainedLocksRef.current.delete(tableId);
-    else retainedLocksRef.current.set(tableId, count - 1);
+    const key = lockKey(tableId);
+    const count = retainedLocksRef.current.get(key) ?? 0;
+    if (count <= 1) retainedLocksRef.current.delete(key);
+    else retainedLocksRef.current.set(key, count - 1);
   }, []);
 
   const isTableLockedByOther = useCallback(

@@ -10,6 +10,13 @@ export function isValidEntityId(value) {
   );
 }
 
+// Entity IDs arrive as either strings or numbers depending on how the diagram
+// was created. Lock bookkeeping is keyed by Map, where 0 and "0" are distinct
+// keys, so every ID crosses into the lock manager as a string.
+export function toEntityKey(value) {
+  return String(value);
+}
+
 export function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }

@@ -1,3 +1,5 @@
+import { toEntityKey } from "./protocol.js";
+
 const DEFAULT_LEASE_MS = 12_000;
 
 export function createTableLockManager({
@@ -39,25 +41,26 @@ export function createTableLockManager({
     list,
     acquire(diagramId, tableId, participant) {
       removeExpired(diagramId);
+      const key = toEntityKey(tableId);
       const locks = locksFor(diagramId);
-      const existing = locks.get(tableId);
+      const existing = locks.get(key);
       if (existing && existing.clientId !== participant.clientId) {
         return { granted: false, lock: existing };
       }
       const lock = {
-        tableId,
+        tableId: key,
         clientId: participant.clientId,
         displayName: participant.displayName,
         color: participant.color,
         token: existing?.token ?? ++fencingToken,
         expiresAt: now() + leaseMs,
       };
-      locks.set(tableId, lock);
+      locks.set(key, lock);
       return { granted: true, lock };
     },
     renew(diagramId, tableId, clientId, token) {
       removeExpired(diagramId);
-      const lock = locksByDiagram.get(diagramId)?.get(tableId);
+      const lock = locksByDiagram.get(diagramId)?.get(toEntityKey(tableId));
       if (!lock || lock.clientId !== clientId || lock.token !== token) {
         return false;
       }
@@ -65,12 +68,13 @@ export function createTableLockManager({
       return true;
     },
     release(diagramId, tableId, clientId, token) {
+      const key = toEntityKey(tableId);
       const locks = locksByDiagram.get(diagramId);
-      const lock = locks?.get(tableId);
+      const lock = locks?.get(key);
       if (!lock || lock.clientId !== clientId || lock.token !== token) {
         return false;
       }
-      locks.delete(tableId);
+      locks.delete(key);
       if (locks.size === 0) locksByDiagram.delete(diagramId);
       return true;
     },
@@ -89,7 +93,10 @@ export function createTableLockManager({
     },
     owns(diagramId, tableId, clientId) {
       removeExpired(diagramId);
-      return locksByDiagram.get(diagramId)?.get(tableId)?.clientId === clientId;
+      return (
+        locksByDiagram.get(diagramId)?.get(toEntityKey(tableId))?.clientId ===
+        clientId
+      );
     },
     sweep() {
       const changedDiagrams = [];
