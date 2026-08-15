@@ -62,6 +62,11 @@ export default function WorkSpace({ forcedDiagramId } = {}) {
   const { areas, setAreas } = useAreas();
   const { notes, setNotes } = useNotes();
   const { saveState, setSaveState } = useSaveState();
+  // Read by the collaboration callbacks, which must not join `load`'s
+  // dependency list — that would tear down and rebuild the socket on every
+  // save-state transition.
+  const saveStateRef = useRef(saveState);
+  saveStateRef.current = saveState;
   const { transform, setTransform } = useTransform();
   const { enums, setEnums } = useEnums();
   const {
@@ -226,18 +231,28 @@ export default function WorkSpace({ forcedDiagramId } = {}) {
           diagramId: id,
           version: diagram.version,
           onSnapshot: (snapshot) => {
+            // A snapshot that lands while a local save is pending must not
+            // report success: doing so cancelled the debounced save and
+            // displayed "Saved" over edits that were just overwritten.
+            const hadPendingSave = saveStateRef.current === State.SAVING;
             applyDiagramState(snapshot, { remote: true });
+            if (hadPendingSave) return;
             setSaveState(State.SAVED);
             setLastSaved(new Date().toLocaleString());
           },
           onDelta: (operation) => {
             if (operation?.type !== "table.move") return;
-            const { id: tableId, x, y } = operation.payload;
+            const { id: tableId, x, y } = operation.payload ?? {};
+            // The send path validates these; the receive path did not.
+            if (!Number.isFinite(x) || !Number.isFinite(y)) return;
             setTables((current) =>
               current.map((table) =>
                 table.id === tableId ? { ...table, x, y } : table,
               ),
             );
+          },
+          onError: (reason) => {
+            console.warn("collaboration rejected a message:", reason);
           },
         });
       } catch (error) {
