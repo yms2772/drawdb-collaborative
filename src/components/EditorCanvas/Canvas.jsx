@@ -25,14 +25,13 @@ import {
   useAreas,
   useNotes,
   useLayout,
-  useSaveState,
   useCollab,
 } from "../../hooks";
 import { useTranslation } from "react-i18next";
 import { useEventListener } from "usehooks-ts";
 import { areFieldsCompatible, getTableHeight } from "../../utils/utils";
 import { getRectFromEndpoints, isInsideRect } from "../../utils/rect";
-import { State, noteWidth } from "../../data/constants";
+import { noteWidth } from "../../data/constants";
 import { nanoid } from "nanoid";
 
 export default function Canvas() {
@@ -47,7 +46,6 @@ export default function Canvas() {
 
   const { tables, updateTable, relationships, addRelationship, database } =
     useDiagram();
-  const { setSaveState } = useSaveState();
   const { areas, updateArea } = useAreas();
   const { notes, updateNote } = useNotes();
   const { layout } = useLayout();
@@ -612,7 +610,9 @@ export default function Canvas() {
     }
 
     if (panning.isPanning && didPan()) {
-      setSaveState(State.SAVING);
+      // Panning only moves the local viewport. Saving here broadcast the whole
+      // document to every participant, so it is persisted with the next real
+      // edit instead.
       if (e.button === 2) rightClickPanned.current = true;
     }
     setPanning((old) => ({ ...old, isPanning: false }));

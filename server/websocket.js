@@ -51,8 +51,13 @@ export function attachCollaborationServer(server, store) {
   const tableLocks = createTableLockManager();
 
   const broadcast = (diagramId, message, except = null) => {
-    for (const client of rooms.get(diagramId) || []) {
-      if (client !== except) send(client, message);
+    const room = rooms.get(diagramId);
+    if (!room) return;
+    // Serialize once for the whole room: documents reach 2MB and this used to
+    // run JSON.stringify per recipient.
+    const data = JSON.stringify(message);
+    for (const client of room) {
+      if (client !== except) sendRaw(client, data);
     }
   };
 
@@ -230,21 +235,36 @@ export function attachCollaborationServer(server, store) {
           });
           return;
         }
-        const applied = {
+        const ack = {
           type: MESSAGE_TYPES.OPERATION_APPLIED,
           diagramId,
           clientId: message.clientId,
           operationId: message.operationId,
           version: result.diagram.version,
-          operation: {
-            type: "snapshot.replace",
-            payload: {
-              name: result.diagram.name,
-              document: result.diagram.document,
+        };
+        if (result.status === "duplicate") {
+          // Already applied under this operation ID; acknowledge without
+          // replaying it to the room.
+          send(socket, ack);
+          return;
+        }
+        // The sender already has this document. Acknowledge it without echoing
+        // the payload back, and send the full operation to everyone else.
+        send(socket, ack);
+        broadcast(
+          diagramId,
+          {
+            ...ack,
+            operation: {
+              type: "snapshot.replace",
+              payload: {
+                name: result.diagram.name,
+                document: result.diagram.document,
+              },
             },
           },
-        };
-        broadcast(diagramId, applied);
+          socket,
+        );
         return;
       }
 
