@@ -9,7 +9,7 @@
     "dev:server": "node --watch server/index.js",
     "start": "node server/index.js",
     "check:server": "node --check server/index.js && node --check server/database.js && node --check server/tableLocks.js && node --check server/websocket.js",
-    "test:server": "node --test server/server.test.js",
+    "test:server": "node --test server/server.test.js server/hardening.test.js",
     "test:import": "node --test src/utils/importSQL/normalize.test.js",
     "build": "vite build",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
