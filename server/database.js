@@ -80,7 +80,14 @@ export function createDiagramStore(db) {
     },
   );
 
+  const selectExists = db.prepare("SELECT 1 FROM diagrams WHERE id = ?");
+
   return {
+    // Existence check that avoids reading and JSON.parse-ing the whole
+    // document, which the WebSocket upgrade path does on every connection.
+    exists(id) {
+      return selectExists.get(id) !== undefined;
+    },
     list() {
       return db
         .prepare(

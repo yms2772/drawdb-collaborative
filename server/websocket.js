@@ -10,12 +10,36 @@ import {
 } from "./protocol.js";
 import { createTableLockManager } from "./tableLocks.js";
 
+/* global process */
+
 const MAX_MESSAGE_BYTES = 2 * 1024 * 1024;
 
-function send(socket, message) {
-  if (socket.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify(message));
+// WebSocket upgrades are exempt from the same-origin policy, so without this
+// check any page a user visits can open a socket to their instance and read or
+// overwrite diagrams. Browsers always send Origin; a missing one means a
+// non-browser client (tests, wscat), which same-origin policy never protected.
+function isAllowedOrigin(origin, host) {
+  if (!origin) return true;
+  const allowList = (process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (allowList.includes(origin)) return true;
+  try {
+    return new URL(origin).host === host;
+  } catch {
+    return false;
   }
+}
+
+function sendRaw(socket, data) {
+  if (socket.readyState === WebSocket.OPEN) {
+    socket.send(data);
+  }
+}
+
+function send(socket, message) {
+  sendRaw(socket, JSON.stringify(message));
 }
 
 export function attachCollaborationServer(server, store) {
@@ -52,22 +76,39 @@ export function attachCollaborationServer(server, store) {
   };
 
   server.on("upgrade", (request, socket, head) => {
-    const url = new URL(request.url, "http://localhost");
-    const match = url.pathname.match(/^\/ws\/diagrams\/([^/]+)$/);
-    const diagramId = match?.[1];
-    if (
-      !diagramId ||
-      !DIAGRAM_ID_PATTERN.test(diagramId) ||
-      !store.get(diagramId)
-    ) {
-      socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
-      socket.destroy();
-      return;
-    }
-    wss.handleUpgrade(request, socket, head, (ws) => {
-      ws.diagramId = diagramId;
-      wss.emit("connection", ws, request);
+    // A raw socket with no error listener throws on ECONNRESET, which would
+    // take the process down before the upgrade even completes.
+    socket.on("error", (error) => {
+      console.error("Upgrade socket error:", error.message);
     });
+    const reject = (status) => {
+      socket.write(`HTTP/1.1 ${status}\r\n\r\n`);
+      socket.destroy();
+    };
+    try {
+      const url = new URL(request.url, "http://localhost");
+      const match = url.pathname.match(/^\/ws\/diagrams\/([^/]+)$/);
+      const diagramId = match?.[1];
+      if (!diagramId || !DIAGRAM_ID_PATTERN.test(diagramId)) {
+        reject("404 Not Found");
+        return;
+      }
+      if (!isAllowedOrigin(request.headers.origin, request.headers.host)) {
+        reject("403 Forbidden");
+        return;
+      }
+      if (!store.exists(diagramId)) {
+        reject("404 Not Found");
+        return;
+      }
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        ws.diagramId = diagramId;
+        wss.emit("connection", ws, request);
+      });
+    } catch (error) {
+      console.error("Upgrade failed:", error.message);
+      reject("400 Bad Request");
+    }
   });
 
   wss.on("connection", (socket) => {
