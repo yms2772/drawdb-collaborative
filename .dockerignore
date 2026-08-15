@@ -22,9 +22,14 @@ temp
 *.swo
 *.bak
 
+# Ignore version control
+.git
+.github
+
 # Ignore Docker-related files
 Dockerfile*
 docker-compose.yml
+compose.yml
 
 # Ignore IDE/editor specific files
 .vscode

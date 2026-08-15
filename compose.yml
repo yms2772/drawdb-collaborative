@@ -4,7 +4,9 @@ services:
     image: drawdb-collaborative
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      # Loopback only: the API and WebSocket are unauthenticated, so reach them
+      # through a tunnel or reverse proxy rather than publishing to the LAN.
+      - "127.0.0.1:3000:3000"
     environment:
       PORT: 3000
       DATABASE_PATH: /data/drawdb.sqlite

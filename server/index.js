@@ -18,7 +18,9 @@ export function createApplication({ databasePath, staticPath } = {}) {
   const store = createDiagramStore(database);
   const app = express();
   app.disable("x-powered-by");
-  app.set("trust proxy", 1);
+  // X-Forwarded-For is only trustworthy when a reverse proxy is guaranteed in
+  // front of us. Opt in explicitly rather than trusting whoever connects.
+  if (process.env.TRUST_PROXY === "1") app.set("trust proxy", 1);
   app.use(express.json({ limit: MAX_DOCUMENT_BYTES }));
 
   const validId = (req, res, next) => {
