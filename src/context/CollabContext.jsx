@@ -94,7 +94,10 @@ export default function CollabContextProvider({ children }) {
       if (pending) {
         pending.resolve(message);
         pendingRef.current.delete(message.operationId);
-      } else if (message.clientId !== identityRef.current.clientId) {
+      } else if (
+        message.clientId !== identityRef.current.clientId &&
+        message.operation?.payload
+      ) {
         sessionRef.current?.onSnapshot?.({
           ...message.operation.payload,
           version: message.version,
@@ -102,8 +105,24 @@ export default function CollabContextProvider({ children }) {
       }
       return;
     }
+    if (message.type === MESSAGE_TYPES.ERROR) {
+      // Every server rejection used to be parsed and dropped, so a denied lock
+      // or a rejected operation looked identical to success.
+      console.warn("collaboration error:", message.message);
+      sessionRef.current?.onError?.(message.message);
+      return;
+    }
     if (message.type === MESSAGE_TYPES.PRESENCE) {
-      setParticipants(message.participants || []);
+      const participants = message.participants || [];
+      setParticipants(participants);
+      // Cursors were only ever added, never removed, so the map grew for the
+      // lifetime of the session.
+      const present = new Set(participants.map((item) => item.clientId));
+      setRemoteCursors((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(([clientId]) => present.has(clientId)),
+        ),
+      );
       return;
     }
     if (message.type === MESSAGE_TYPES.TABLE_LOCK_STATE) {
@@ -181,6 +200,16 @@ export default function CollabContextProvider({ children }) {
       socket.onclose = () => {
         if (socketRef.current !== socket) return;
         socketRef.current = null;
+        // Leases do not survive the connection. Without this the client keeps
+        // believing it holds locks the server has already reassigned, and
+        // acquireTableLock short-circuits on those stale entries forever.
+        heldLocksRef.current.clear();
+        pendingLocksByTableRef.current.clear();
+        for (const pending of pendingLocksRef.current.values()) {
+          pending.resolve(false);
+        }
+        pendingLocksRef.current.clear();
+        setTableLocks({});
         setConnectionState(CONNECTION_STATE.CONNECTING);
         const delay = Math.min(
           1000 * 2 ** reconnectAttemptsRef.current,
@@ -198,16 +227,17 @@ export default function CollabContextProvider({ children }) {
   );
 
   const connect = useCallback(
-    ({ diagramId, version, onSnapshot, onDelta }) => {
+    ({ diagramId, version, onSnapshot, onDelta, onError }) => {
       if (sessionRef.current?.diagramId === diagramId) {
         sessionRef.current.onSnapshot = onSnapshot;
         sessionRef.current.onDelta = onDelta;
+        sessionRef.current.onError = onError;
         versionRef.current = version;
         return;
       }
       window.clearTimeout(reconnectRef.current);
       socketRef.current?.close();
-      sessionRef.current = { diagramId, onSnapshot, onDelta };
+      sessionRef.current = { diagramId, onSnapshot, onDelta, onError };
       versionRef.current = version;
       setRemoteCursors({});
       setTableLocks({});

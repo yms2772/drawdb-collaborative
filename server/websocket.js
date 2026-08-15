@@ -314,8 +314,16 @@ export function attachCollaborationServer(server, store) {
 
       if (message.type === MESSAGE_TYPES.TABLE_LOCK_RENEW) {
         if (
-          isValidEntityId(message.tableId) &&
-          Number.isInteger(message.token) &&
+          !isValidEntityId(message.tableId) ||
+          !Number.isInteger(message.token)
+        ) {
+          send(socket, {
+            type: MESSAGE_TYPES.ERROR,
+            message: "Invalid table lock renewal",
+          });
+          return;
+        }
+        if (
           tableLocks.renew(
             diagramId,
             message.tableId,
@@ -324,7 +332,15 @@ export function attachCollaborationServer(server, store) {
           )
         ) {
           broadcastTableLocks(diagramId);
+          return;
         }
+        // The lease is gone. Push current state so the client stops believing
+        // it holds a lock the server has already reassigned.
+        send(socket, {
+          type: MESSAGE_TYPES.TABLE_LOCK_STATE,
+          diagramId,
+          locks: tableLocks.list(diagramId),
+        });
         return;
       }
 
@@ -355,7 +371,10 @@ export function attachCollaborationServer(server, store) {
             clientId: socket.participant.clientId,
             x,
             y,
-            selected: typeof selected === "string" ? selected : null,
+            selected:
+              typeof selected === "string" && selected.length <= 128
+                ? selected
+                : null,
           },
           socket,
         );
